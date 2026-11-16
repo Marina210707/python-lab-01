@@ -1,41 +1,80 @@
 import collections
 import pickle
 import json
+import time
 from functools import cached_property
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from .structures import Posting, DocMeta
 from .pipeline import read_documents, tokenize
 
-
-# Тут ми не імпортуємо utils, щоб не було циклу
 
 class InvertedIndex:
     def __init__(self) -> None:
         self.index: dict[str, list[Posting]] = collections.defaultdict(list)
         self.doc_meta: dict[int, DocMeta] = {}
 
-    def build(self, data_dir: str) -> None:
-        # Імпортуємо декоратор всередині методу
-        from .utils import timed
-        # Оскільки декоратор треба навісити на метод, а ми всередині,
-        # простіше викликати його як звичайну функцію-обгортку, або
-        # залишити як є, якщо він не критичний.
-        # Але для чистоти, давай просто викличемо логіку всередині.
-        import time
-        start = time.perf_counter()
+    def build_partial(self, file_paths: list[str], start_doc_id: int) -> tuple[
+        dict[str, list[Posting]], dict[int, DocMeta]]:
+        partial_index: dict[str, list[Posting]] = collections.defaultdict(list)
+        partial_meta: dict[int, DocMeta] = {}
+        current_doc_id = start_doc_id
 
-        docs = read_documents(data_dir)
-        for doc_id, (file_path, text) in enumerate(docs.items()):
+        for file_path in file_paths:
+            try:
+                text = Path(file_path).read_text(encoding="utf-8")
+            except Exception:
+                continue
             tokens = tokenize(text)
-            title = file_path.split("\\")[-1] if "\\" in file_path else file_path.split("/")[-1]
-            self.doc_meta[doc_id] = DocMeta(doc_id=doc_id, title=title, length=len(tokens))
+            partial_meta[current_doc_id] = DocMeta(doc_id=current_doc_id, title=Path(file_path).name,
+                                                   length=len(tokens))
             term_freqs = collections.Counter(tokens)
             for term, freq in term_freqs.items():
-                self.index[term].append(Posting(doc_id=doc_id, freq=freq))
+                partial_index[term].append(Posting(doc_id=current_doc_id, freq=freq))
+            current_doc_id += 1
+        return partial_index, partial_meta
+
+    def merge(self, partials: list[tuple[dict[str, list[Posting]], dict[int, DocMeta]]]) -> None:
+        self.index = collections.defaultdict(list)
+        self.doc_meta = {}
+        for partial_index, partial_meta in partials:
+            for term, postings in partial_index.items():
+                self.index[term].extend(postings)
+            self.doc_meta.update(partial_meta)
         for term in self.index:
             self.index[term].sort(key=lambda p: p.doc_id)
 
+    def build(self, data_dir: str, workers: int = 1, executor: str = "serial") -> None:
+        start = time.perf_counter()
+        docs = read_documents(data_dir)
+        file_paths = list(docs.keys())
+
+        if not file_paths:
+            print("Немає файлів для обробки.")
+            return
+
+        chunk_size = max(1, len(file_paths) // workers)
+        chunks = [file_paths[i:i + chunk_size] for i in range(0, len(file_paths), chunk_size)]
+
+        partials = []
+
+        if executor == "serial" or workers == 1:
+            for i, chunk in enumerate(chunks):
+                partials.append(self.build_partial(chunk, i * chunk_size))
+        elif executor == "threads":
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = [pool.submit(self.build_partial, chunk, i * chunk_size) for i, chunk in enumerate(chunks)]
+                for f in as_completed(futures):
+                    partials.append(f.result())
+        elif executor == "processes":
+            with ProcessPoolExecutor(max_workers=workers) as pool:
+                futures = [pool.submit(self.build_partial, chunk, i * chunk_size) for i, chunk in enumerate(chunks)]
+                for f in as_completed(futures):
+                    partials.append(f.result())
+
+        self.merge(partials)
         end = time.perf_counter()
-        print(f"[@timed] build виконано за {end - start:.4f} сек.")
+        print(f"[@timed] build ({executor}, {workers} workers) виконано за {end - start:.4f} сек.")
 
     def get_postings(self, term: str) -> list[Posting]:
         return self.index.get(term, [])
@@ -74,24 +113,3 @@ class InvertedIndex:
     def load_pickle(cls, filepath: str) -> 'InvertedIndex':
         with open(filepath, 'rb') as f:
             return pickle.load(f)
-
-    def save_json(self, filepath: str) -> None:
-        data = {
-            "doc_meta": {k: {"doc_id": v.doc_id, "title": v.title, "length": v.length} for k, v in
-                         self.doc_meta.items()},
-            "index": {term: [{"doc_id": p.doc_id, "freq": p.freq} for p in postings] for term, postings in
-                      self.index.items()}
-        }
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-    @classmethod
-    def load_json(cls, filepath: str) -> 'InvertedIndex':
-        with open(filepath, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        new_index = cls()
-        for k, v in data["doc_meta"].items():
-            new_index.doc_meta[int(k)] = DocMeta(doc_id=v["doc_id"], title=v["title"], length=v["length"])
-        for term, postings in data["index"].items():
-            new_index.index[term] = [Posting(doc_id=p["doc_id"], freq=p["freq"]) for p in postings]
-        return new_index
