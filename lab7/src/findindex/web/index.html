@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>FindIndex Search</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background: #f4f4f4; }
+        .search-box { display: flex; gap: 10px; margin-bottom: 20px; }
+        input[type="text"] { flex-grow: 1; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 5px; }
+        button { padding: 10px 20px; font-size: 16px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .result { background: white; padding: 15px; margin-bottom: 10px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .result h3 { margin-top: 0; }
+        .score { color: #666; font-size: 12px; }
+        .snippet { color: #333; line-height: 1.5; }
+    </style>
+</head>
+<body>
+    <h1>Пошук по документах</h1>
+    <form method="get" action="/" class="search-box">
+        <input type="text" name="q" value="{{ query or '' }}" placeholder="Введіть запит...">
+        <button type="submit">Шукати</button>
+    </form>
+
+    {% if error %}
+        <p style="color: red;">{{ error }}</p>
+    {% endif %}
+
+    {% if results %}
+        <p>Знайдено результатів: {{ results|length }}</p>
+        {% for r in results %}
+            <div class="result">
+                <h3>{{ r.title }}</h3>
+                <div class="score">Score: {{ "%.4f"|format(r.score) }} | Doc ID: {{ r.doc_id }}</div>
+                <div class="snippet">{{ r.title }}</div> <!-- Тут можна додати сніпет, якщо треба -->
+            </div>
+        {% endfor %}
+    {% endif %}
+</body>
+</html>
