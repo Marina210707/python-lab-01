@@ -1,0 +1,4 @@
+# file: D:\Навчання\Python лаби\my_lab\lab4\src\findindex\cli.py
+# hypothesis_version: 6.141.1
+
+['--format', '--out', '--scorer', '__main__', 'bm25', 'build', 'command', 'data_dir', 'index.pkl', 'index_file', 'json', 'pickle', 'query', 'search', 'tfidf', 'Алгоритм ранжування', 'Доступні команди', 'Пошуковий запрос', 'Файл для збереження']

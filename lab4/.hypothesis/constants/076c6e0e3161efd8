@@ -1,0 +1,4 @@
+# file: D:\Навчання\Python лаби\my_lab\lab4\src\findindex\parser.py
+# hypothesis_version: 6.141.1
+
+['!', '"', '&&', '(', '()', '()"', ')', 'AND', 'NOT', 'Node', 'OR', '|']

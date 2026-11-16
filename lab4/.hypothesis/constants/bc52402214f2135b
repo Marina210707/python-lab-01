@@ -1,0 +1,4 @@
+# file: D:\Навчання\Python лаби\my_lab\lab4\src\findindex\pipeline.py
+# hypothesis_version: 6.141.1
+
+['*.txt', '\\b\\w+\\b', 'utf-8']
